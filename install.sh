@@ -7,16 +7,13 @@
 # 确保脚本发生错误时立刻退出
 set -e
 
-# 获取脚本所在的绝对路径
-SRC_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SWIFT_FILE="$SRC_DIR/xcode_cleaner.swift"
-OUT_BIN="$SRC_DIR/XcodeCleaner"
+# 1. 检查是否为 curl | bash 管道模式
+IS_CURL_PIPE=false
+if [ -z "${BASH_SOURCE[0]}" ] || [ "${BASH_SOURCE[0]}" = "bash" ]; then
+    IS_CURL_PIPE=true
+fi
 
-echo "=========================================="
-echo "🚀 开始编译并安装 XcodeCleaner..."
-echo "=========================================="
-
-# 1. 检查 swiftc 编译器
+# 2. 检查 swiftc 编译器
 if ! command -v swiftc &> /dev/null; then
     echo "❌ 错误: 未检测到 swiftc 编译器！"
     echo "💡 请确保您的 Mac 已经安装了 Xcode 或者是 Command Line Tools。"
@@ -24,12 +21,39 @@ if ! command -v swiftc &> /dev/null; then
     exit 1
 fi
 
-# 2. 开始编译
-echo "📦 正在编译 Swift 单文件源码 (开启 -O 速度优化)..."
+echo "=========================================="
+echo "🚀 开始编译并安装 XcodeCleaner..."
+echo "=========================================="
+
+# 创建临时工作目录并在退出时自动清理
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+SWIFT_FILE="$TMP_DIR/xcode_cleaner.swift"
+INSTALL_DIR="/Applications"
+OUT_BIN="$INSTALL_DIR/XcodeCleaner"
+
+# 3. 准备源码文件
+if [ "$IS_CURL_PIPE" = true ]; then
+    echo "🌐 检测到通过 curl 管道运行，正在从 GitHub 自动下载最新源码..."
+    curl -fsSL "https://raw.githubusercontent.com/chenhuaizhe/XcodeCleaner/main/xcode_cleaner.swift" -o "$SWIFT_FILE"
+else
+    SRC_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    if [ -f "$SRC_DIR/xcode_cleaner.swift" ]; then
+        echo "📂 检测到本地源码文件，正在复制..."
+        cp "$SRC_DIR/xcode_cleaner.swift" "$SWIFT_FILE"
+    else
+        echo "🌐 本地未找到源码文件，正在从 GitHub 自动下载最新源码..."
+        curl -fsSL "https://raw.githubusercontent.com/chenhuaizhe/XcodeCleaner/main/xcode_cleaner.swift" -o "$SWIFT_FILE"
+    fi
+fi
+
+# 4. 开始编译并输出到最终 /Applications 目录
+echo "📦 正在编译 Swift 源码 (开启 -O 速度优化)..."
 swiftc -O "$SWIFT_FILE" -o "$OUT_BIN"
 echo "✅ 编译成功！生成可执行程序: $OUT_BIN"
 
-# 3. 创建全局命令行工具链接
+# 5. 创建全局命令行工具链接
 echo "🔗 正在配置终端全局调用指令 (xcodeclean)..."
 # 创建 /usr/local/bin 目录（如果不存在的话）
 if [ ! -d "/usr/local/bin" ]; then
@@ -37,9 +61,9 @@ if [ ! -d "/usr/local/bin" ]; then
     sudo mkdir -p /usr/local/bin
 fi
 
-# 软链接到全局路径，并自动覆盖旧链接
+# 软链接到全局路径，指向 /Applications/XcodeCleaner
 if ln -sf "$OUT_BIN" /usr/local/bin/xcodeclean 2>/dev/null; then
-    echo "✅ 全局指令配置完成！您现在可以在终端的任意目录下输入 'xcodeclean' 直接运行软件。"
+    echo "✅ 全局指令配置完成！您现在可以在终端 of 任意目录下输入 'xcodeclean' 直接运行软件。"
 else
     echo "🔑 正在尝试使用管理员权限创建全局终端链接..."
     if sudo -n ln -sf "$OUT_BIN" /usr/local/bin/xcodeclean 2>/dev/null; then
@@ -48,11 +72,6 @@ else
         echo "⚠️ 权限限制：无法自动配置全局终端调用链接（若需全局调用，请手动执行: sudo ln -sf $OUT_BIN /usr/local/bin/xcodeclean）"
     fi
 fi
-
-# 4. 创建 Application 软链接以便 Spotlight 检索和在启动台中显示
-echo "🖥 正在将其链接到系统应用程序目录 (/Applications)..."
-# 软链接到 Applications 目录
-ln -sf "$OUT_BIN" /Applications/XcodeCleaner
 
 echo "=========================================="
 echo "🎉 安装完成！现在您可以选择以下方式使用该软件："
