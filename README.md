@@ -6,7 +6,7 @@ XcodeCleaner 是一个原生、极轻量、免沙盒限制的 macOS 桌面清理
 
 该项目完全基于 **SwiftUI** 构建。为了极致的权限体验并绕过苹果沙盒（Sandbox）对系统目录的拦截，它采用**单文件 Swift GUI 编译设计**。不需要下载臃肿的 `.xcodeproj`，一行指令即可快速在本地编译并拉起原生 GUI 应用。
 
-![XcodeCleaner UI Screenshot](https://raw.githubusercontent.com/chenhuaizhe/XcodeCleaner/main/screenshot.png) *(请在此替换为您的实际截图)*
+![XcodeCleaner UI Screenshot](screenshot.png)
 
 ---
 
