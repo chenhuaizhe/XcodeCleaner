@@ -6,7 +6,7 @@ XcodeCleaner is a native, ultra-lightweight, sandbox-free macOS desktop utility 
 
 Built entirely with **SwiftUI** in a **single-file Swift GUI compiler approach**, it bypasses Apple Sandbox's system directory restrictions. It allows you to build and run the native GUI application locally with a single terminal command without setting up bulky `.xcodeproj` project trees.
 
-![XcodeCleaner UI Screenshot](screenshot.png)
+![XcodeCleaner UI Screenshot](screenshot_en.png)
 
 ---
 
