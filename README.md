@@ -48,8 +48,8 @@ curl -fsSL https://raw.githubusercontent.com/chenhuaizhe/XcodeCleaner/main/insta
    ```bash
    xcodeclean
    ```
-3. **访达双击**：  
-   在 Finder 中找到可执行二进制文件 `XcodeCleaner` 直接双击启动。
+3. **应用文件夹运行**：  
+   直接在 Finder（访达）的“应用程序”中双击打开 `XcodeCleaner.app`（带有精美 3D 锤子图标的原生 Mac 桌面应用）。
 
 ---
 

@@ -48,8 +48,8 @@ After running the install script, you can launch XcodeCleaner in any of the foll
    ```bash
    xcodeclean
    ```
-3. **Finder Double-Click**:  
-   Locate the compiled `XcodeCleaner` binary inside Finder and double-click it.
+3. **Applications Folder**:  
+   Double-click the `XcodeCleaner.app` bundle (packaged with a premium 3D hammer icon) inside your Applications folder.
 
 ---
 
