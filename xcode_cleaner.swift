@@ -187,6 +187,7 @@ class CleanerController: ObservableObject {
     @Published var isDeleting = false
     @Published var scanStatusText = ""
     @Published var scanProgress: Double = 0.0
+    @Published var isPermissionDenied = false
     
     // 多选
     @Published var selectedItemIds = Set<String>()
@@ -414,6 +415,7 @@ class CleanerController: ObservableObject {
         scanStatusText = localize(zh: "正在扫描 Xcode 缓存目录...", en: "Scanning Xcode developer directories...")
         selectedItemIds.removeAll()
         allScannedItems.removeAll()
+        isPermissionDenied = false
         
         let fileManager = FileManager.default
         let home = NSHomeDirectory()
@@ -427,6 +429,19 @@ class CleanerController: ObservableObject {
         
         Task.detached(priority: .userInitiated) {
             var scanned: [CleanableItem] = []
+            var permissionDenied = false
+            
+            func safeContents(of path: String) -> [URL] {
+                do {
+                    return try fileManager.contentsOfDirectory(at: URL(fileURLWithPath: path), includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles)
+                } catch {
+                    let nsError = error as NSError
+                    if nsError.domain == NSCocoaErrorDomain && (nsError.code == 257 || nsError.code == 513) {
+                        permissionDenied = true
+                    }
+                    return []
+                }
+            }
             
             // 1. DerivedData
             let statusDD = localize(zh: "正在计算 DerivedData 编译缓存...", en: "Calculating DerivedData build caches...")
@@ -434,20 +449,19 @@ class CleanerController: ObservableObject {
                 self.scanStatusText = statusDD
                 self.scanProgress = 0.1
             }
-            if let urls = try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: derivedDataPath), includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles) {
-                for url in urls {
-                    let size = XcodeScanner.shared.getDirectorySize(url: url)
-                    let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-                    let modDate = attrs?[.modificationDate] as? Date ?? Date()
-                    scanned.append(CleanableItem(
-                        id: url.path,
-                        name: url.lastPathComponent,
-                        path: url.path,
-                        size: size,
-                        modificationDate: modDate,
-                        type: .derivedData
-                    ))
-                }
+            let ddUrls = safeContents(of: derivedDataPath)
+            for url in ddUrls {
+                let size = XcodeScanner.shared.getDirectorySize(url: url)
+                let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+                let modDate = attrs?[.modificationDate] as? Date ?? Date()
+                scanned.append(CleanableItem(
+                    id: url.path,
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: size,
+                    modificationDate: modDate,
+                    type: .derivedData
+                ))
             }
             
             // 2. Archives
@@ -456,24 +470,22 @@ class CleanerController: ObservableObject {
                 self.scanStatusText = statusArch
                 self.scanProgress = 0.3
             }
-            if let dateFolders = try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: archivesPath), includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
-                for folder in dateFolders {
-                    if let archives = try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles) {
-                        for archive in archives {
-                            if archive.pathExtension == "xcarchive" {
-                                let size = XcodeScanner.shared.getDirectorySize(url: archive)
-                                let attrs = try? fileManager.attributesOfItem(atPath: archive.path)
-                                let modDate = attrs?[.modificationDate] as? Date ?? Date()
-                                scanned.append(CleanableItem(
-                                    id: archive.path,
-                                    name: archive.lastPathComponent,
-                                    path: archive.path,
-                                    size: size,
-                                    modificationDate: modDate,
-                                    type: .archive
-                                ))
-                            }
-                        }
+            let dateFolders = safeContents(of: archivesPath)
+            for folder in dateFolders {
+                let archives = safeContents(of: folder.path)
+                for archive in archives {
+                    if archive.pathExtension == "xcarchive" {
+                        let size = XcodeScanner.shared.getDirectorySize(url: archive)
+                        let attrs = try? fileManager.attributesOfItem(atPath: archive.path)
+                        let modDate = attrs?[.modificationDate] as? Date ?? Date()
+                        scanned.append(CleanableItem(
+                            id: archive.path,
+                            name: archive.lastPathComponent,
+                            path: archive.path,
+                            size: size,
+                            modificationDate: modDate,
+                            type: .archive
+                        ))
                     }
                 }
             }
@@ -484,20 +496,19 @@ class CleanerController: ObservableObject {
                 self.scanStatusText = statusDev
                 self.scanProgress = 0.5
             }
-            if let urls = try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: deviceSupportPath), includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles) {
-                for url in urls {
-                    let size = XcodeScanner.shared.getDirectorySize(url: url)
-                    let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-                    let modDate = attrs?[.modificationDate] as? Date ?? Date()
-                    scanned.append(CleanableItem(
-                        id: url.path,
-                        name: url.lastPathComponent,
-                        path: url.path,
-                        size: size,
-                        modificationDate: modDate,
-                        type: .deviceSupport
-                    ))
-                }
+            let dsUrls = safeContents(of: deviceSupportPath)
+            for url in dsUrls {
+                let size = XcodeScanner.shared.getDirectorySize(url: url)
+                let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+                let modDate = attrs?[.modificationDate] as? Date ?? Date()
+                scanned.append(CleanableItem(
+                    id: url.path,
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: size,
+                    modificationDate: modDate,
+                    type: .deviceSupport
+                ))
             }
             
             // 4. Previews
@@ -506,20 +517,19 @@ class CleanerController: ObservableObject {
                 self.scanStatusText = statusPr
                 self.scanProgress = 0.6
             }
-            if let urls = try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: previewsPath), includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles) {
-                for url in urls {
-                    let size = XcodeScanner.shared.getDirectorySize(url: url)
-                    let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-                    let modDate = attrs?[.modificationDate] as? Date ?? Date()
-                    scanned.append(CleanableItem(
-                        id: url.path,
-                        name: url.lastPathComponent,
-                        path: url.path,
-                        size: size,
-                        modificationDate: modDate,
-                        type: .preview
-                    ))
-                }
+            let prUrls = safeContents(of: previewsPath)
+            for url in prUrls {
+                let size = XcodeScanner.shared.getDirectorySize(url: url)
+                let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+                let modDate = attrs?[.modificationDate] as? Date ?? Date()
+                scanned.append(CleanableItem(
+                    id: url.path,
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: size,
+                    modificationDate: modDate,
+                    type: .preview
+                ))
             }
             
             // 5. Caches
@@ -528,20 +538,19 @@ class CleanerController: ObservableObject {
                 self.scanStatusText = statusCch
                 self.scanProgress = 0.7
             }
-            if let urls = try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: cachesPath), includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles) {
-                for url in urls {
-                    let size = XcodeScanner.shared.getDirectorySize(url: url)
-                    let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-                    let modDate = attrs?[.modificationDate] as? Date ?? Date()
-                    scanned.append(CleanableItem(
-                        id: url.path,
-                        name: url.lastPathComponent,
-                        path: url.path,
-                        size: size,
-                        modificationDate: modDate,
-                        type: .cache
-                    ))
-                }
+            let cchUrls = safeContents(of: cachesPath)
+            for url in cchUrls {
+                let size = XcodeScanner.shared.getDirectorySize(url: url)
+                let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+                let modDate = attrs?[.modificationDate] as? Date ?? Date()
+                scanned.append(CleanableItem(
+                    id: url.path,
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: size,
+                    modificationDate: modDate,
+                    type: .cache
+                ))
             }
             
             // 6. Simulators
@@ -552,64 +561,65 @@ class CleanerController: ObservableObject {
             }
             let simctlStatus = XcodeScanner.shared.getSimctlStatus()
             
-            if let urls = try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: simulatorsPath), includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
-                let totalSims = urls.count
-                for (index, url) in urls.enumerated() {
-                    let udid = url.lastPathComponent
-                    if udid.contains("-") && udid.count >= 32 {
-                        let plistPath = url.appendingPathComponent("device.plist").path
-                        if fileManager.fileExists(atPath: plistPath) {
-                            let plistURL = URL(fileURLWithPath: plistPath)
-                            var name = "未知模拟器"
-                            var runtime = "未知系统"
-                            if let plistData = try? Data(contentsOf: plistURL),
-                               let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] {
-                                name = plist["name"] as? String ?? name
-                                if let rawRuntime = plist["runtime"] as? String {
-                                    var r = rawRuntime.replacingOccurrences(of: "com.apple.CoreSimulator.SimRuntime.", with: "")
-                                    r = r.replacingOccurrences(of: "iOS-", with: "iOS ")
-                                    r = r.replacingOccurrences(of: "watchOS-", with: "watchOS ")
-                                    r = r.replacingOccurrences(of: "tvOS-", with: "tvOS ")
-                                    r = r.replacingOccurrences(of: "xrOS-", with: "visionOS ")
-                                    runtime = r.replacingOccurrences(of: "-", with: ".")
-                                }
+            let simUrls = safeContents(of: simulatorsPath)
+            let totalSims = simUrls.count
+            for (index, url) in simUrls.enumerated() {
+                let udid = url.lastPathComponent
+                if udid.contains("-") && udid.count >= 32 {
+                    let plistPath = url.appendingPathComponent("device.plist").path
+                    if fileManager.fileExists(atPath: plistPath) {
+                        let plistURL = URL(fileURLWithPath: plistPath)
+                        var name = "未知模拟器"
+                        var runtime = "未知系统"
+                        if let plistData = try? Data(contentsOf: plistURL),
+                           let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] {
+                            name = plist["name"] as? String ?? name
+                            if let rawRuntime = plist["runtime"] as? String {
+                                var r = rawRuntime.replacingOccurrences(of: "com.apple.CoreSimulator.SimRuntime.", with: "")
+                                r = r.replacingOccurrences(of: "iOS-", with: "iOS ")
+                                r = r.replacingOccurrences(of: "watchOS-", with: "watchOS ")
+                                r = r.replacingOccurrences(of: "tvOS-", with: "tvOS ")
+                                r = r.replacingOccurrences(of: "xrOS-", with: "visionOS ")
+                                runtime = r.replacingOccurrences(of: "-", with: ".")
                             }
-                            
-                            let tempName = name
-                            let tempRuntime = runtime
-                            let statusTextFormat = localize(
-                                zh: "正在计算模拟器大小 (\(index + 1)/\(totalSims)): \(tempName)...",
-                                en: "Calculating Simulator Size (\(index + 1)/\(totalSims)): \(tempName)..."
-                            )
-                            
-                            await MainActor.run {
-                                self.scanStatusText = statusTextFormat
-                                self.scanProgress = 0.8 + (Double(index + 1) / Double(totalSims)) * 0.19
-                            }
-                            
-                            let size = XcodeScanner.shared.getDirectorySize(url: url)
-                            let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-                            let modDate = attrs?[.modificationDate] as? Date ?? Date()
-                            
-                            let isAvailable = simctlStatus[udid] ?? true
-                            
-                            scanned.append(CleanableItem(
-                                id: udid,
-                                name: tempName,
-                                path: url.path,
-                                size: size,
-                                modificationDate: modDate,
-                                type: .simulator(udid: udid, runtime: tempRuntime, model: tempName, isAvailable: isAvailable)
-                            ))
                         }
+                        
+                        let tempName = name
+                        let tempRuntime = runtime
+                        let statusTextFormat = localize(
+                            zh: "正在计算模拟器大小 (\(index + 1)/\(totalSims)): \(tempName)...",
+                            en: "Calculating Simulator Size (\(index + 1)/\(totalSims)): \(tempName)..."
+                        )
+                        
+                        await MainActor.run {
+                            self.scanStatusText = statusTextFormat
+                            self.scanProgress = 0.8 + (Double(index + 1) / Double(totalSims)) * 0.19
+                        }
+                        
+                        let size = XcodeScanner.shared.getDirectorySize(url: url)
+                        let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+                        let modDate = attrs?[.modificationDate] as? Date ?? Date()
+                        
+                        let isAvailable = simctlStatus[udid] ?? true
+                        
+                        scanned.append(CleanableItem(
+                            id: udid,
+                            name: tempName,
+                            path: url.path,
+                            size: size,
+                            modificationDate: modDate,
+                            type: .simulator(udid: udid, runtime: tempRuntime, model: tempName, isAvailable: isAvailable)
+                        ))
                     }
                 }
             }
             
             let finalScanned = scanned
+            let finalPermission = permissionDenied
             let finishText = localize(zh: "扫描完成！", en: "Scan Completed!")
             await MainActor.run {
                 self.allScannedItems = finalScanned
+                self.isPermissionDenied = finalPermission
                 self.updateCategoryTotals()
                 self.isScanning = false
                 self.scanProgress = 1.0
@@ -993,6 +1003,46 @@ struct DetailListView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            if controller.isPermissionDenied {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .foregroundColor(.red)
+                        .font(.title3)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(localize(
+                            zh: "权限不足：需要完全磁盘访问权限 (Full Disk Access Required)",
+                            en: "Permission Denied: Full Disk Access Required"
+                        ))
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        
+                        Text(localize(
+                            zh: "由于 macOS 系统的安全隐私限制，独立的桌面应用需要获得授权才能扫描 ~/Library 下的 Xcode 缓存。请在系统设置中为 XcodeCleaner 勾选‘完全磁盘访问权限’，然后重新扫描。",
+                            en: "Due to macOS security restrictions, independent apps need Full Disk Access to scan Xcode cache directories. Please enable 'Full Disk Access' for XcodeCleaner in System Settings and click Rescan."
+                        ))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        Text(localize(zh: "去系统设置授权", en: "Grant Permission"))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.08)))
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+            }
+
             if let activeCategory = controller.selectedCategoryId,
                let category = controller.categories.first(where: { $0.id == activeCategory }) {
                 HStack(spacing: 12) {
